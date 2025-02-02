@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "es2016",
+    "module": "amd", // Use amd or system for single file output
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "outFile": "./dist/TinderInsignia.js", // Output to a single file
+    "rootDir": "./"
+  },
+  "exclude": [
+    "dist" // Exclude the dist directory
+  ]
+}
