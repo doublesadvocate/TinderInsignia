@@ -1,15 +1,6 @@
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 define("AVLT", ["require", "exports"], function (require, exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -329,7 +320,7 @@ define("AVLT.test", ["require", "exports", "AVLT"], function (require, exports, 
     });
 });
 // Choice.ts
-define("Choice", ["require", "exports"], function (require, exports) {
+define("IChoice", ["require", "exports"], function (require, exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
 });
@@ -375,6 +366,55 @@ define("ChoiceDisplay", ["require", "exports"], function (require, exports) {
     function clearChoices(choicesContainer) {
         choicesContainer.innerHTML = "";
     }
+});
+define("ChoiceDisplay.test", ["require", "exports", "ChoiceDisplay"], function (require, exports, ChoiceDisplay_1) {
+    "use strict";
+    Object.defineProperty(exports, "__esModule", { value: true });
+    describe('ChoiceDisplay', () => {
+        let choicesContainer;
+        beforeEach(() => {
+            choicesContainer = (0, ChoiceDisplay_1.createChoicesContainer)();
+            document.body.appendChild(choicesContainer);
+        });
+        afterEach(() => {
+            document.body.innerHTML = '';
+        });
+        test('createChoicesContainer should create a div with correct styles', () => {
+            expect(choicesContainer.tagName).toBe('DIV');
+            expect(choicesContainer.style.marginTop).toBe('20px');
+        });
+        test('displayChoices should display buttons for each choice', () => {
+            const choices = [
+                { text: 'Choice 1', callback: jest.fn() },
+                { text: 'Choice 2', callback: jest.fn() },
+            ];
+            (0, ChoiceDisplay_1.displayChoices)(choicesContainer, choices, jest.fn());
+            const buttons = choicesContainer.querySelectorAll('button');
+            expect(buttons.length).toBe(2);
+            expect(buttons[0].innerText).toBe('Choice 1');
+            expect(buttons[1].innerText).toBe('Choice 2');
+        });
+        test('displayChoices should call onChoiceSelected when a button is clicked', () => {
+            const onChoiceSelected = jest.fn();
+            const choices = [
+                { text: 'Choice 1', callback: jest.fn() },
+                { text: 'Choice 2', callback: jest.fn() },
+            ];
+            (0, ChoiceDisplay_1.displayChoices)(choicesContainer, choices, onChoiceSelected);
+            const buttons = choicesContainer.querySelectorAll('button');
+            buttons[0].click();
+            expect(onChoiceSelected).toHaveBeenCalledWith(choices[0]);
+        });
+        test('clearChoices should clear the choices container', () => {
+            const choices = [
+                { text: 'Choice 1', callback: jest.fn() },
+                { text: 'Choice 2', callback: jest.fn() },
+            ];
+            (0, ChoiceDisplay_1.displayChoices)(choicesContainer, choices, jest.fn());
+            (0, ChoiceDisplay_1.clearChoices)(choicesContainer);
+            expect(choicesContainer.innerHTML).toBe('');
+        });
+    });
 });
 // constants.ts
 define("Constants", ["require", "exports"], function (require, exports) {
@@ -502,7 +542,7 @@ define("SpeedControl", ["require", "exports"], function (require, exports) {
     }
 });
 // GameRunner.ts
-define("GameRunner", ["require", "exports", "Constants", "ContainerManager", "TextDisplay", "ChoiceDisplay", "SpeedControl"], function (require, exports, Constants_1, ContainerManager_1, TextDisplay_1, ChoiceDisplay_1, SpeedControl_1) {
+define("GameRunner", ["require", "exports", "Constants", "ContainerManager", "TextDisplay", "ChoiceDisplay", "SpeedControl"], function (require, exports, Constants_1, ContainerManager_1, TextDisplay_1, ChoiceDisplay_2, SpeedControl_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.GameRunner = void 0;
@@ -511,7 +551,7 @@ define("GameRunner", ["require", "exports", "Constants", "ContainerManager", "Te
             this.container = (0, ContainerManager_1.createContainer)(containerOrId);
             this.textDisplay = (0, TextDisplay_1.createTextDisplay)();
             this.container.appendChild(this.textDisplay);
-            this.choicesContainer = (0, ChoiceDisplay_1.createChoicesContainer)();
+            this.choicesContainer = (0, ChoiceDisplay_2.createChoicesContainer)();
             this.container.appendChild(this.choicesContainer);
             this.wordDelay = Constants_1.WORD_DELAY;
             this.speedControlComponents = (0, SpeedControl_1.createSpeedControl)(this.wordDelay, (newDelay) => {
@@ -521,15 +561,15 @@ define("GameRunner", ["require", "exports", "Constants", "ContainerManager", "Te
         }
         clearScreen() {
             (0, TextDisplay_1.clearTextDisplay)(this.textDisplay);
-            (0, ChoiceDisplay_1.clearChoices)(this.choicesContainer);
+            (0, ChoiceDisplay_2.clearChoices)(this.choicesContainer);
         }
         displayText(text, callback) {
             this.clearScreen();
             (0, TextDisplay_1.displayTextWordByWord)(this.textDisplay, text, this.wordDelay, callback);
         }
         displayChoices(choices) {
-            (0, ChoiceDisplay_1.displayChoices)(this.choicesContainer, choices, (choice) => {
-                (0, ChoiceDisplay_1.clearChoices)(this.choicesContainer);
+            (0, ChoiceDisplay_2.displayChoices)(this.choicesContainer, choices, (choice) => {
+                (0, ChoiceDisplay_2.clearChoices)(this.choicesContainer);
                 choice.callback();
             });
         }
@@ -593,10 +633,8 @@ define("GameRunner.test", ["require", "exports", "GameRunner", "Constants"], fun
             const choices = [choice1, choice2];
             gameRunner.runGameStep(text, choices);
             const totalDelay = Constants_2.WORD_DELAY * text.split(/\s+/).length + Constants_2.ADDITIONAL_DELAY;
-            console.log(`Total delay: ${totalDelay}ms`);
             setTimeout(() => {
                 const buttons = gameRunner['choicesContainer'].querySelectorAll('button');
-                console.log(`Number of buttons: ${buttons.length}`);
                 expect(buttons.length).toBe(2);
                 expect(buttons[0].innerText).toBe('Choice 1');
                 expect(buttons[1].innerText).toBe('Choice 2');
@@ -845,6 +883,7 @@ define("PeerNetwork.test", ["require", "exports", "PeerNetwork"], function (requ
         let signalData1 = [];
         let signalData2 = [];
         beforeEach(() => {
+            jest.clearAllMocks();
             log1 = [];
             log2 = [];
             peerListUpdated1 = [];
@@ -864,28 +903,30 @@ define("PeerNetwork.test", ["require", "exports", "PeerNetwork"], function (requ
                 onSignal: (signalData) => signalData2.push(signalData),
             });
         });
-        test('should establish connection and exchange messages', () => __awaiter(void 0, void 0, void 0, function* () {
-            // Create offer from peer1
-            peerNetwork1.createOffer();
-            // Process signal data from peer1 in peer2
-            signalData1.forEach(signal => peerNetwork2.processRemoteSignal(signal));
-            // Process signal data from peer2 in peer1
-            signalData2.forEach(signal => peerNetwork1.processRemoteSignal(signal));
-            // Wait for connection to be established
-            yield new Promise(resolve => setTimeout(resolve, 1000));
-            // Send message from peer1 to peer2
-            peerNetwork1.sendMessage({ text: 'Hello from peer1' });
-            // Send message from peer2 to peer1
-            peerNetwork2.sendMessage({ text: 'Hello from peer2' });
-            // Wait for messages to be exchanged
-            yield new Promise(resolve => setTimeout(resolve, 1000));
-            expect(log1).toContain('Connection established');
-            expect(log2).toContain('Connection established');
-            expect(log1).toContain('Sent message: {"text":"Hello from peer1"}');
-            expect(log2).toContain('Sent message: {"text":"Hello from peer2"}');
-            expect(log1).toContain('Data received: {"type":"message","data":{"text":"Hello from peer2"}}');
-            expect(log2).toContain('Data received: {"type":"message","data":{"text":"Hello from peer1"}}');
-        }));
+        test('should update peer list when a new peer ID is received', () => {
+            peerNetwork1['updatePeerList']('peer3');
+            expect(peerListUpdated1).toEqual([['peer1', 'peer3']]);
+            expect(log1).toContain('Updated peer list: ["peer1","peer3"]');
+        });
+        test('should merge peer lists', () => {
+            peerNetwork1['mergePeerLists'](['peer2', 'peer3']);
+            expect(peerListUpdated1).toEqual([['peer1', 'peer2', 'peer3']]);
+            expect(log1).toContain('Merged peer list: ["peer1","peer2","peer3"]');
+        });
+        test('should handle incoming data messages', () => {
+            const message = JSON.stringify({ type: 'message', data: { text: 'Hello' } });
+            peerNetwork1['handleIncomingData'](message);
+            expect(log1).toContain('Received message: {"text":"Hello"}');
+        });
+        test('should handle invalid JSON data', () => {
+            peerNetwork1['handleIncomingData']('invalid json');
+            expect(log1).toContain('Received invalid JSON data');
+        });
+        test('should handle unknown message type', () => {
+            const message = JSON.stringify({ type: 'unknown', data: {} });
+            peerNetwork1['handleIncomingData'](message);
+            expect(log1).toContain('Unknown message type: unknown');
+        });
     });
 });
 // File: PlayerState.ts

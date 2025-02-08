@@ -1,6 +1,6 @@
 // ChoiceDisplay.ts
 
-import { Choice } from './Choice';
+import { IChoice } from './IChoice';
 
 export function createChoicesContainer(): HTMLDivElement {
     const choicesContainer = document.createElement("div");
@@ -10,8 +10,8 @@ export function createChoicesContainer(): HTMLDivElement {
 
 export function displayChoices(
     choicesContainer: HTMLDivElement,
-    choices: Choice[],
-    onChoiceSelected: (choice: Choice) => void
+    choices: IChoice[],
+    onChoiceSelected: (choice: IChoice) => void
 ): void {
     choicesContainer.innerHTML = "";
     choices.forEach((choice) => {

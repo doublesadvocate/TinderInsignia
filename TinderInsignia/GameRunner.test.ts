@@ -1,7 +1,7 @@
 // GameRunner.test.ts
 
 import { GameRunner } from './GameRunner';
-import { Choice } from './Choice';
+import { IChoice } from './IChoice';
 import { WORD_DELAY, ADDITIONAL_DELAY } from './Constants';
 
 describe('GameRunner Integration Tests', () => {
@@ -27,8 +27,8 @@ describe('GameRunner Integration Tests', () => {
     });
 
     test('should display choices and handle choice selection', () => {
-        const choice1: Choice = { text: 'Choice 1', callback: jest.fn() };
-        const choice2: Choice = { text: 'Choice 2', callback: jest.fn() };
+        const choice1: IChoice = { text: 'Choice 1', callback: jest.fn() };
+        const choice2: IChoice = { text: 'Choice 2', callback: jest.fn() };
         const choices = [choice1, choice2];
 
         gameRunner.displayChoices(choices);
@@ -54,8 +54,8 @@ describe('GameRunner Integration Tests', () => {
 
     test('should run game step and display text and choices', (done) => {
         const text = "Game step text";
-        const choice1: Choice = { text: 'Choice 1', callback: jest.fn() };
-        const choice2: Choice = { text: 'Choice 2', callback: jest.fn() };
+        const choice1: IChoice = { text: 'Choice 1', callback: jest.fn() };
+        const choice2: IChoice = { text: 'Choice 2', callback: jest.fn() };
         const choices = [choice1, choice2];
 
         gameRunner.runGameStep(text, choices);

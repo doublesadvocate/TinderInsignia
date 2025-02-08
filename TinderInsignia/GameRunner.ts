@@ -1,7 +1,7 @@
 // GameRunner.ts
 
 import { WORD_DELAY } from './Constants';
-import { Choice } from './Choice';
+import { IChoice } from './IChoice';
 import { createContainer } from './ContainerManager';
 import { createTextDisplay, displayTextWordByWord, clearTextDisplay } from './TextDisplay';
 import { createChoicesContainer, displayChoices, clearChoices } from './ChoiceDisplay';
@@ -41,14 +41,14 @@ export class GameRunner {
         displayTextWordByWord(this.textDisplay, text, this.wordDelay, callback);
     }
 
-    displayChoices(choices: Choice[]): void {
+    displayChoices(choices: IChoice[]): void {
         displayChoices(this.choicesContainer, choices, (choice) => {
             clearChoices(this.choicesContainer);
             choice.callback();
         });
     }
 
-    runGameStep(text: string, choices: Choice[]): void {
+    runGameStep(text: string, choices: IChoice[]): void {
         this.displayText(text, () => {
             this.displayChoices(choices);
         });

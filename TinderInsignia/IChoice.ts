@@ -1,6 +1,6 @@
 // Choice.ts
 
-export interface Choice {
+export interface IChoice {
     text: string;
     callback: () => void;
 }
