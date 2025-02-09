@@ -387,8 +387,13 @@ export const executeAbility = (
 
     if (!ability || !attacker || !defender) return state;
 
+    // Check if attacker meets the stat requirements
+    const meetsStatRequirements = Object.entries(ability.requirements).every(
+        ([stat, value]) => (attacker.stats[stat] ?? 0) >= value
+    );
+
     // Check if attacker can use this ability (body parts, statuses, etc.)
-    if (!checkBodyPartAndStatusRequirements(attacker, ability)) {
+    if (!meetsStatRequirements || !checkBodyPartAndStatusRequirements(attacker, ability)) {
         // Return a log entry or something indicating it failed
         const failLog: AbilityResult = {
             newAttacker: attacker,

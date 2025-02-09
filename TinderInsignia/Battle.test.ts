@@ -222,4 +222,93 @@ describe('Epic Battle Simulations (UI-Based Approach)', () => {
         // Optionally add assertions here:
         // expect(...).toBe(...);
     });
+
+    test('Ability not applied if caster does not meet requirements', () => {
+        const MAGE_ID = 'Archmage_Ignis';
+        const GOLEM_ID = 'Stone_Colossus';
+
+        // 1. Create a fresh GameState
+        let state = createGameState();
+
+        // 2. Create our entities and insert them into state
+        state = {
+            ...state,
+            entities: {
+                [MAGE_ID]: {
+                    ...createEntity(MAGE_ID, {
+                        health: 100,
+                        arcane: 5, // Not enough arcane to use abilities
+                        fire: 15,
+                        water: 15,
+                    }),
+                    resources: 500,
+                },
+                [GOLEM_ID]: {
+                    ...createEntity(GOLEM_ID, {
+                        health: 200,
+                        stone: 30,
+                        heat: 0,
+                    }),
+                    resources: 500,
+                },
+            },
+        };
+
+        // 3. Create abilities with explicit IDs
+        state = createAbility(state, MAGE_ID, {
+            id: 'mage_pyro_blast',
+            name: 'Pyro Blast',
+            description: 'Superheats enemy with fire magic',
+            effect: (attacker, defender) => {
+                const damage = attacker.stats.fire ?? 0;
+                const newHeat = (defender.stats.heat ?? 0) + 5;
+                const newDefender = {
+                    ...defender,
+                    stats: {
+                        ...defender.stats,
+                        health: (defender.stats.health ?? 0) - damage,
+                        heat: newHeat,
+                    },
+                };
+                return [
+                    attacker,
+                    newDefender,
+                    {
+                        newAttacker: attacker,
+                        newDefender,
+                        damageDealt: damage,
+                        statusEffects: [],
+                        message: `🔥 ${attacker.id} casts Pyro Blast on ${defender.id} (Heat +5 → ${newHeat})`,
+                    },
+                ];
+            },
+            requirements: { arcane: 10 },
+        });
+
+        // 4. Initialize combat
+        state = {
+            ...state,
+            combat: {
+                participants: [MAGE_ID, GOLEM_ID],
+                turnOrder: [MAGE_ID, GOLEM_ID],
+                currentTurn: 0,
+                log: [],
+            },
+        };
+
+        // 5. Attempt to use the ability
+        state = processCombatTurn(state, (s: GameState) => {
+            const chosenAbilityId = 'mage_pyro_blast';
+            const defenderId = GOLEM_ID;
+            return executeAbility(s, chosenAbilityId, MAGE_ID, defenderId);
+        });
+
+        // 6. Check the combat log to ensure the ability was not applied
+        const updatedCombatUI = getCombatState(state);
+        const lastAction = updatedCombatUI.log[updatedCombatUI.log.length - 1];
+        expect(lastAction.message).toBe(
+            `${MAGE_ID} tried to use "Pyro Blast" but lacked the proper condition!`
+        );
+    });
+
 });
