@@ -37,6 +37,7 @@ export interface Ability {
 }
 
 export type StatModifier = (stats: StatBag) => StatBag;
+
 export interface AbilityResult {
     newAttacker: GameEntity;
     newDefender: GameEntity;
@@ -86,20 +87,40 @@ export const createEntity = (id: EntityID, baseStats: StatBag): GameEntity => ({
 // ========================
 // Ability System
 // ========================
+//
+// CHANGED: Now we allow the caller to specify an `id` in `params`.
+// If they don’t provide it, you can default to something like `ability_{++counter}` or a UUID.
+let abilityCounter = 0;
+
 export const createAbility = (
     state: GameState,
     creatorId: EntityID,
-    params: Omit<Ability, 'id' | 'cost'>
+    params: Omit<Ability, 'id' | 'cost'> & Partial<Pick<Ability, 'id'>>
 ): GameState => {
     const creator = state.entities[creatorId];
-    const cost = Math.round(Object.values(creator.stats).reduce((sum, val) => sum + val, 0) * 0.5);
+    if (!creator) return state;
 
-    if (creator.resources < cost) return state;
+    // Example cost calculation
+    const cost = Math.round(
+        Object.values(creator.stats).reduce((sum, val) => sum + (val ?? 0), 0) * 0.5
+    );
 
+    // If not enough resources, skip
+    if (creator.resources < cost) {
+        return state;
+    }
+
+    // If the caller didn't pass an ID, generate one
+    const newAbilityId = params.id ?? `ability_${++abilityCounter}`;
+
+    // Build the new Ability
     const newAbility: Ability = {
-        id: `ability_${Date.now()}`,
-        ...params,
+        id: newAbilityId,
+        name: params.name,
+        description: params.description,
+        effect: params.effect,
         cost,
+        requirements: params.requirements,
     };
 
     return {
@@ -109,59 +130,64 @@ export const createAbility = (
             [creatorId]: {
                 ...creator,
                 resources: creator.resources - cost,
+                // Keep only the last 3 abilities + the new one
                 abilities: [...creator.abilities.slice(-3), newAbility],
             },
         },
-        abilities: { ...state.abilities, [newAbility.id]: newAbility },
+        abilities: {
+            ...state.abilities,
+            [newAbilityId]: newAbility,
+        },
     };
 };
 
-export const createDamageEffect = (
-    damageStat: StatKey,
-    defenderStat: StatKey = 'health'
-): AbilityEffect => (attacker, defender) => {
-    const damage = attacker.stats[damageStat] || 0;
-    const newDefenderStats = {
-        ...defender.stats,
-        [defenderStat]: (defender.stats[defenderStat] || 0) - damage
-    };
+export const createDamageEffect =
+    (damageStat: StatKey, defenderStat: StatKey = 'health'): AbilityEffect =>
+        (attacker, defender) => {
+            const damage = attacker.stats[damageStat] ?? 0; // safe fallback to 0
+            const newDefenderStats = {
+                ...defender.stats,
+                [defenderStat]: (defender.stats[defenderStat] ?? 0) - damage,
+            };
 
-    const result: AbilityResult = {
-        newAttacker: attacker,
-        newDefender: { ...defender, stats: newDefenderStats },
-        damageDealt: damage,
-        statusEffects: [],
-        message: `${attacker.id} dealt ${damage} ${damageStat} damage to ${defender.id}!`
-    };
+            const result: AbilityResult = {
+                newAttacker: attacker,
+                newDefender: { ...defender, stats: newDefenderStats },
+                damageDealt: damage,
+                statusEffects: [],
+                message: `${attacker.id} dealt ${damage} ${damageStat} damage to ${defender.id}!`,
+            };
 
-    return [attacker, result.newDefender, result];
-};
+            return [attacker, result.newDefender, result];
+        };
 
-export const createStatModEffect = (
-    statModifiers: {
-        attacker?: StatModifier;
-        defender?: StatModifier;
-    },
-    message: string
-): AbilityEffect => (attacker, defender) => {
-    const newAttacker = statModifiers.attacker
-        ? { ...attacker, stats: statModifiers.attacker(attacker.stats) }
-        : attacker;
+export const createStatModEffect =
+    (
+        statModifiers: {
+            attacker?: StatModifier;
+            defender?: StatModifier;
+        },
+        message: string
+    ): AbilityEffect =>
+        (attacker, defender) => {
+            const newAttacker = statModifiers.attacker
+                ? { ...attacker, stats: statModifiers.attacker(attacker.stats) }
+                : attacker;
 
-    const newDefender = statModifiers.defender
-        ? { ...defender, stats: statModifiers.defender(defender.stats) }
-        : defender;
+            const newDefender = statModifiers.defender
+                ? { ...defender, stats: statModifiers.defender(defender.stats) }
+                : defender;
 
-    const result: AbilityResult = {
-        newAttacker,
-        newDefender,
-        damageDealt: 0,
-        statusEffects: [],
-        message
-    };
+            const result: AbilityResult = {
+                newAttacker,
+                newDefender,
+                damageDealt: 0,
+                statusEffects: [],
+                message,
+            };
 
-    return [newAttacker, newDefender, result];
-};
+            return [newAttacker, newDefender, result];
+        };
 
 // ========================
 // Combat System
@@ -173,7 +199,8 @@ export const processCombatTurn = (
     if (!state.combat) return state;
 
     const newState = action(state);
-    const nextTurn = (newState.combat!.currentTurn + 1) % newState.combat!.turnOrder.length;
+    const nextTurn =
+        (newState.combat!.currentTurn + 1) % newState.combat!.turnOrder.length;
 
     return {
         ...newState,
@@ -203,12 +230,14 @@ export const executeAbility = (
         entities: {
             ...state.entities,
             [attackerId]: newAttacker,
-            [defenderId]: newDefender
+            [defenderId]: newDefender,
         },
-        combat: state.combat ? {
-            ...state.combat,
-            log: [...state.combat.log, result]
-        } : undefined
+        combat: state.combat
+            ? {
+                ...state.combat,
+                log: [...state.combat.log, result],
+            }
+            : undefined,
     };
 };
 
@@ -216,36 +245,39 @@ export const executeAbility = (
 // UI Feedback System
 // ========================
 export const getAvailableActions = (state: GameState, entityId: EntityID) => ({
-    inventory: state.entities[entityId].inventory.map(item => ({
+    inventory: state.entities[entityId].inventory.map((item) => ({
         id: item.id,
         name: item.name,
         description: item.description,
         equipable: !state.entities[entityId].equipment[item.slot],
     })),
-    abilities: state.entities[entityId].abilities.map(ability => ({
+    abilities: state.entities[entityId].abilities.map((ability) => ({
         id: ability.id,
         name: ability.name,
         description: ability.description,
         cost: ability.cost,
         usable: Object.entries(ability.requirements).every(([stat, value]) =>
-            (state.entities[entityId].stats[stat] || 0) >= value
+            (state.entities[entityId].stats[stat] ?? 0) >= value
         ),
     })),
-    equipmentSlots: Object.entries(state.entities[entityId].equipment).map(([slot, item]) => ({
-        slot,
-        item: item ? { name: item.name, stats: item.stats } : null,
-    })),
+    equipmentSlots: Object.entries(state.entities[entityId].equipment).map(
+        ([slot, item]) => ({
+            slot,
+            item: item ? { name: item.name, stats: item.stats } : null,
+        })
+    ),
 });
 
 export const getCombatState = (state: GameState) => ({
     currentTurn: state.combat?.turnOrder[state.combat.currentTurn] || '',
     log: state.combat?.log || [],
-    participants: state.combat?.participants.map(id => {
-        const entity = state.entities[id];
-        return {
-            id,
-            stats: entity ? { ...entity.stats } : {},
-            resources: entity?.resources || 0
-        };
-    }) || [],
+    participants:
+        state.combat?.participants.map((id) => {
+            const entity = state.entities[id];
+            return {
+                id,
+                stats: entity ? { ...entity.stats } : {},
+                resources: entity?.resources ?? 0,
+            };
+        }) || [],
 });
