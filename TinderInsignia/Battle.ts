@@ -1,21 +1,46 @@
-// ========================
+﻿// ========================
 // Core Types (Functional Foundation)
 // ========================
+
 export type StatKey = string;
 export type StatBag = Record<StatKey, number>;
-export type EquipmentSlot = 'weapon' | 'armor' | 'accessory' | 'utility';
-export type EntityID = string;
-export type ItemID = string;
-export type AbilityID = string;
 
+/**
+ * New: Define body parts for more narrative, “physical” combat.
+ * Each part has its own structural integrity and can be “destroyed.”
+ */
+export interface BodyPart {
+    name: string;
+    structuralIntegrity: number;
+    maxStructuralIntegrity: number;
+    vital?: boolean;
+}
+
+export type EquipmentSlot = 'weapon' | 'gear' | 'keepsake' | 'utility';
+
+/**
+ * Instead of an absolute “HP → 0 = death,” we can check if
+ * an entity’s body is so damaged that it cannot move or act.
+ */
 export interface GameEntity {
     id: EntityID;
     stats: StatBag;
+    /**
+     * New: track each body part's state. 
+     * If *all* vital body parts are destroyed, the entity is incapacitated.
+     */
+    bodyParts: BodyPart[];
+    statusConditions: string[]; // e.g., "stunned", "paralyzed", etc.
+
     inventory: Item[];
     equipment: Record<EquipmentSlot, Item | null>;
     abilities: Ability[];
     resources: number;
 }
+
+export type EntityID = string;
+export type ItemID = string;
+export type AbilityID = string;
 
 export interface Item {
     id: ItemID;
@@ -34,6 +59,12 @@ export interface Ability {
     effect: AbilityEffect;
     cost: number;
     requirements: StatBag;
+    /**
+     * Optional: You might require certain body parts to be functional,
+     * or that certain statuses NOT be present (e.g. not "stunned").
+     */
+    requiredBodyParts?: string[];
+    disallowedStatuses?: string[];
 }
 
 export type StatModifier = (stats: StatBag) => StatBag;
@@ -43,6 +74,9 @@ export interface AbilityResult {
     newDefender: GameEntity;
     damageDealt: number;
     statusEffects: string[];
+    /**
+     * New: more explicit user-facing text that can incorporate body part details.
+     */
     message: string;
 }
 
@@ -69,29 +103,90 @@ export interface CombatState {
 // ========================
 // System Initialization
 // ========================
+
 export const createGameState = (): GameState => ({
     entities: {},
     items: {},
     abilities: {},
 });
 
-export const createEntity = (id: EntityID, baseStats: StatBag): GameEntity => ({
+/**
+ * Create a brand-new entity with some base stats, plus
+ * a default set of body parts. Real usage might accept a param for bodyParts.
+ */
+export const createEntity = (
+    id: EntityID,
+    baseStats: StatBag,
+    bodyParts?: BodyPart[]
+): GameEntity => ({
     id,
     stats: { ...baseStats },
+    bodyParts: bodyParts || [
+        // A simple default if none provided.
+        { name: 'Torso', structuralIntegrity: 10, maxStructuralIntegrity: 10, vital: true },
+        { name: 'Left Arm', structuralIntegrity: 5, maxStructuralIntegrity: 5 },
+        { name: 'Right Arm', structuralIntegrity: 5, maxStructuralIntegrity: 5 },
+    ],
+    statusConditions: [],
     inventory: [],
-    equipment: { weapon: null, armor: null, accessory: null, utility: null },
+    // Refactored equipment to support `keepsake`
+    equipment: { weapon: null, gear: null, keepsake: null, utility: null },
     abilities: [],
     resources: 100,
 });
 
+/**
+ * Check if the entity can still act. This version simply checks:
+ * - At least one vital body part with > 0 structuralIntegrity
+ * - Not pinned by a "paralyzed" or "stunned" status
+ * Expand as desired for your system.
+ */
+export const canEntityAct = (entity: GameEntity): boolean => {
+    const hasVitalPartIntact = entity.bodyParts.some(
+        (part) => part.vital && part.structuralIntegrity > 0
+    );
+    const isParalyzedOrStunned = entity.statusConditions.some((status) =>
+        ['paralyzed', 'stunned'].includes(status)
+    );
+    return hasVitalPartIntact && !isParalyzedOrStunned;
+};
+
 // ========================
 // Ability System
 // ========================
-//
-// CHANGED: Now we allow the caller to specify an `id` in `params`.
-// If they don�t provide it, you can default to something like `ability_{++counter}` or a UUID.
 let abilityCounter = 0;
 
+/**
+ * Example logic for checking that the entity meets any custom body part
+ * or status requirements for the ability. You can expand or replace this
+ * with your own approach.
+ */
+function checkBodyPartAndStatusRequirements(entity: GameEntity, ability: Ability): boolean {
+    // If the ability requires certain body parts:
+    if (ability.requiredBodyParts) {
+        for (const partName of ability.requiredBodyParts) {
+            const part = entity.bodyParts.find(
+                (bp) => bp.name.toLowerCase() === partName.toLowerCase()
+            );
+            if (!part || part.structuralIntegrity <= 0) {
+                return false; // required body part is missing or destroyed
+            }
+        }
+    }
+    // If the ability disallows certain statuses:
+    if (ability.disallowedStatuses) {
+        for (const badStatus of ability.disallowedStatuses) {
+            if (entity.statusConditions.includes(badStatus)) {
+                return false; // has a forbidden status
+            }
+        }
+    }
+    return true;
+}
+
+/**
+ * Create a new ability, deduct resources from creator, limit to last 3 abilities, etc.
+ */
 export const createAbility = (
     state: GameState,
     creatorId: EntityID,
@@ -121,6 +216,8 @@ export const createAbility = (
         effect: params.effect,
         cost,
         requirements: params.requirements,
+        requiredBodyParts: params.requiredBodyParts,
+        disallowedStatuses: params.disallowedStatuses,
     };
 
     return {
@@ -141,6 +238,13 @@ export const createAbility = (
     };
 };
 
+/**
+ * A simple “damage” effect that uses any chosen attacker stat
+ * (e.g. “fire”) to reduce some defender stat (e.g. “health”).
+ * 
+ * We keep it for backward compatibility, but in a purely “body-based”
+ * approach, you'd use the new `createBodyPartDamageEffect` below.
+ */
 export const createDamageEffect =
     (damageStat: StatKey, defenderStat: StatKey = 'health'): AbilityEffect =>
         (attacker, defender) => {
@@ -161,6 +265,56 @@ export const createDamageEffect =
             return [attacker, result.newDefender, result];
         };
 
+/**
+ * New: This is an example effect that damages a specific body part,
+ * modeling the “destruction of the body” instead of an abstract HP.
+ */
+export const createBodyPartDamageEffect =
+    (targetPartName: string, damageAmount: number): AbilityEffect =>
+        (attacker, defender) => {
+            // Find the targeted part
+            const partIndex = defender.bodyParts.findIndex(
+                (bp) => bp.name.toLowerCase() === targetPartName.toLowerCase()
+            );
+            if (partIndex < 0) {
+                // Body part not found: no damage
+                const noDamageResult: AbilityResult = {
+                    newAttacker: attacker,
+                    newDefender: defender,
+                    damageDealt: 0,
+                    statusEffects: [],
+                    message: `${attacker.id} tried to hit ${defender.id}'s ${targetPartName}, but it doesn't exist!`,
+                };
+                return [attacker, defender, noDamageResult];
+            }
+
+            const bodyParts = [...defender.bodyParts];
+            const originalIntegrity = bodyParts[partIndex].structuralIntegrity;
+            const newIntegrity = Math.max(originalIntegrity - damageAmount, 0);
+            bodyParts[partIndex] = {
+                ...bodyParts[partIndex],
+                structuralIntegrity: newIntegrity,
+            };
+
+            const newDefender: GameEntity = {
+                ...defender,
+                bodyParts,
+            };
+
+            const result: AbilityResult = {
+                newAttacker: attacker,
+                newDefender,
+                damageDealt: damageAmount,
+                statusEffects: [],
+                message: `${attacker.id} strikes ${defender.id}'s ${targetPartName}, dealing ${damageAmount} damage (was ${originalIntegrity}, now ${newIntegrity})!`,
+            };
+
+            return [attacker, newDefender, result];
+        };
+
+/**
+ * A generalized effect that modifies stats for attacker and/or defender.
+ */
 export const createStatModEffect =
     (
         statModifiers: {
@@ -192,6 +346,12 @@ export const createStatModEffect =
 // ========================
 // Combat System
 // ========================
+
+/**
+ * Runs one "turn" of the combat, letting you apply a particular action
+ * (in your tests or app, typically an ability usage).
+ * Then it rotates to the next entity’s turn.
+ */
 export const processCombatTurn = (
     state: GameState,
     action: (state: GameState) => GameState
@@ -211,6 +371,10 @@ export const processCombatTurn = (
     };
 };
 
+/**
+ * Executes an ability from attacker to defender, returning a new state
+ * with updated body parts, statuses, etc. 
+ */
 export const executeAbility = (
     state: GameState,
     abilityId: AbilityID,
@@ -222,6 +386,27 @@ export const executeAbility = (
     const defender = state.entities[defenderId];
 
     if (!ability || !attacker || !defender) return state;
+
+    // Check if attacker can use this ability (body parts, statuses, etc.)
+    if (!checkBodyPartAndStatusRequirements(attacker, ability)) {
+        // Return a log entry or something indicating it failed
+        const failLog: AbilityResult = {
+            newAttacker: attacker,
+            newDefender: defender,
+            damageDealt: 0,
+            statusEffects: [],
+            message: `${attacker.id} tried to use "${ability.name}" but lacked the proper condition!`,
+        };
+        return {
+            ...state,
+            combat: state.combat
+                ? {
+                    ...state.combat,
+                    log: [...state.combat.log, failLog],
+                }
+                : undefined,
+        };
+    }
 
     const [newAttacker, newDefender, result] = ability.effect(attacker, defender, state);
 
@@ -244,40 +429,74 @@ export const executeAbility = (
 // ========================
 // UI Feedback System
 // ========================
-export const getAvailableActions = (state: GameState, entityId: EntityID) => ({
-    inventory: state.entities[entityId].inventory.map((item) => ({
-        id: item.id,
-        name: item.name,
-        description: item.description,
-        equipable: !state.entities[entityId].equipment[item.slot],
-    })),
-    abilities: state.entities[entityId].abilities.map((ability) => ({
-        id: ability.id,
-        name: ability.name,
-        description: ability.description,
-        cost: ability.cost,
-        usable: Object.entries(ability.requirements).every(([stat, value]) =>
-            (state.entities[entityId].stats[stat] ?? 0) >= value
-        ),
-    })),
-    equipmentSlots: Object.entries(state.entities[entityId].equipment).map(
-        ([slot, item]) => ({
-            slot,
-            item: item ? { name: item.name, stats: item.stats } : null,
-        })
-    ),
-});
 
-export const getCombatState = (state: GameState) => ({
-    currentTurn: state.combat?.turnOrder[state.combat.currentTurn] || '',
-    log: state.combat?.log || [],
-    participants:
-        state.combat?.participants.map((id) => {
+/**
+ * Display what items can be equipped, what abilities are available, etc.
+ * Note that "equipable" logic is simplistic here (just checks if the slot is empty).
+ * We also show if an ability is “usable” from a *stat perspective* only.
+ */
+export const getAvailableActions = (state: GameState, entityId: EntityID) => {
+    const entity = state.entities[entityId];
+    return {
+        inventory: entity.inventory.map((item) => ({
+            id: item.id,
+            name: item.name,
+            description: item.description,
+            equipable: !entity.equipment[item.slot],
+        })),
+        abilities: entity.abilities.map((ability) => {
+            const meetsStatRequirements = Object.entries(ability.requirements).every(
+                ([stat, value]) => (entity.stats[stat] ?? 0) >= value
+            );
+            const meetsBodyStatusRequirements = checkBodyPartAndStatusRequirements(
+                entity,
+                ability
+            );
+
+            return {
+                id: ability.id,
+                name: ability.name,
+                description: ability.description,
+                cost: ability.cost,
+                usable: meetsStatRequirements && meetsBodyStatusRequirements,
+            };
+        }),
+        equipmentSlots: Object.entries(entity.equipment).map(([slot, slotItem]) => ({
+            slot,
+            item: slotItem ? { name: slotItem.name, stats: slotItem.stats } : null,
+        })),
+    };
+};
+
+/**
+ * Return high-level info about the current combat,
+ * including log messages and each participant’s stats/condition.
+ */
+export const getCombatState = (state: GameState) => {
+    if (!state.combat) {
+        return {
+            currentTurn: '',
+            log: [],
+            participants: [],
+        };
+    }
+    const { turnOrder, currentTurn, participants, log } = state.combat;
+    return {
+        currentTurn: turnOrder[currentTurn] || '',
+        log,
+        participants: participants.map((id) => {
             const entity = state.entities[id];
             return {
                 id,
                 stats: entity ? { ...entity.stats } : {},
                 resources: entity?.resources ?? 0,
+                bodyParts: entity?.bodyParts.map((bp) => ({
+                    name: bp.name,
+                    integrity: bp.structuralIntegrity,
+                    max: bp.maxStructuralIntegrity,
+                })),
+                statusConditions: [...(entity?.statusConditions || [])],
             };
-        }) || [],
-});
+        }),
+    };
+};
