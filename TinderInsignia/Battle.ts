@@ -151,6 +151,35 @@ export const canEntityAct = (entity: GameEntity): boolean => {
     return hasVitalPartIntact && !isParalyzedOrStunned;
 };
 
+
+/**
+ * Compute the cost of an item based on its stats.
+ */
+export const computeItemCost = (stats: StatBag): number => {
+    return Math.round(Object.values(stats).reduce((sum, val) => sum + (val ?? 0), 0) * 0.5);
+};
+
+
+
+    export const createItem = (
+        id: ItemID,
+        name: string,
+        slot: EquipmentSlot,
+        stats: StatBag,
+        description: string
+    ): Item => {
+        const creationCost = computeItemCost(stats);
+        return {
+            id,
+            name,
+            slot,
+            stats,
+            generationSource: stats,
+            description,
+            creationCost,
+        };
+    };
+
 // ========================
 // Ability System
 // ========================
