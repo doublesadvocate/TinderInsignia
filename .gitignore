@@ -3,6 +3,5 @@
 ################################################################################
 
 /.vs
-/node_modules
 /TinderInsignia/node_modules
 /TinderInsignia/obj/Debug
